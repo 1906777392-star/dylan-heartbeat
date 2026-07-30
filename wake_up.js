@@ -4,6 +4,7 @@ const path = require("path");
 const { buildNtfyPayload } = require("./ntfy_priority");
 
 const TIMELINE_PATH = path.join(__dirname, "enhanced_messages.json");
+const FORCE_WAKE_TEST_MARKER_PATH = path.join(__dirname, ".wake_prompt_test_sent");
 const PORT = Number(process.env.PORT) || 3000;
 const GATEWAY_BASE_URL = (process.env.GATEWAY_BASE_URL || `http://localhost:${PORT}`).replace(/\/+$/, "");
 const GATEWAY_URL = `${GATEWAY_BASE_URL}/internal/wake-event`;
@@ -335,7 +336,21 @@ function getLocalTimeString() {
   return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
 }
 
+function isOneShotWakePromptTest() {
+  return Boolean(String(process.env.WAKE_PROMPT_TEMPLATE || "").trim())
+    && !fs.existsSync(FORCE_WAKE_TEST_MARKER_PATH);
+}
+
+function markOneShotWakePromptTestSent() {
+  try {
+    fs.writeFileSync(FORCE_WAKE_TEST_MARKER_PATH, new Date().toISOString(), "utf-8");
+  } catch (err) {
+    console.log("无法记录主动消息测试状态：", err.message);
+  }
+}
+
 function shouldWake(lastUserTime) {
+  if (isOneShotWakePromptTest()) return true;
   const now = getNow();
   const diffMinutes = Math.floor((now - new Date(lastUserTime)) / 1000 / 60);
   return diffMinutes >= getWakeAfterMinutes(now);
@@ -594,6 +609,7 @@ ${historyText}`
         console.log(`\n${pushResult.providerLabel} 推送失败，本次不发送推送\n`);
         eventContent = `（${getLocalTimeString()} 自动唤醒：本次未发送推送｜原因：${pushResult.providerLabel} 推送失败：${pushResult.reason}）`;
       } else {
+        if (isOneShotWakePromptTest()) markOneShotWakePromptTestSent();
         eventContent = `（${getLocalTimeString()} 刚刚给用户发了${pushResult.providerLabel}推送：${safeTitle}｜${safeBody}）`;
       }
     }
